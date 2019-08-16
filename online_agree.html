@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>在线签署</title>
+  <meta content="IE=edge" http-equiv="X-UA-Compatible" />
+  <meta content="yes" name="apple-mobile-web-app-capable" />
+  <meta name="viewport" content="width=device-width,user-scalable=no,initial-scale=1,maximum-scale=1,minimum-scale=1">
+  <meta content="black" name="apple-mobile-web-app-status-bar-style" />
+  <link href="base.css" rel="stylesheet" type="text/css">
+  <link href="layer/need/layer.css" rel="stylesheet" type="text/css">
+  <script src="layer/layer.js" type="text/javascript"></script>
+  <style>
+    body, html {
+      overflow: hidden;
+      position: fixed;
+      width: 100%;
+      top: 0;
+      left: 0;
+    }
+
+    canvas {
+      background: white;
+      border: 1px dashed black;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
+    .top_bars {
+      position: fixed;
+      width: 40px;
+      background: #f1f1f1;
+      right: 0;
+      top: 0
+    }
+
+    .tools {
+      position: absolute;
+      width: 1.3rem;
+      height: .5rem;
+      left: -18px;
+      background: #495060;
+      color: white;
+      line-height: .5rem;
+      text-align: center;
+      transform: rotateZ(90deg);
+    }
+
+    .clearCanvas {
+      bottom: 1.9rem;
+    }
+
+    .pencilOrMove {
+      bottom: .5rem;
+    }
+
+    .finish {
+      width: 1.3rem;
+      bottom: 47%;
+      background: #0590ff;
+    }
+
+    .reload {
+      top: .5rem;
+    }
+
+
+    .tips {
+      font-size: .32rem;
+      text-align: center;
+      position: fixed;
+      top: 50%;
+      left: -2.3rem;
+      transform: rotate(90deg);
+      z-index: 10;
+    }
+
+    .secondState {
+      transform: rotate(90deg);
+      z-index: 10;
+      position: fixed;
+      top: 50%;
+      width: 8.4rem;
+      left: 52px;
+      font-size: 0.25rem;
+    }
+
+    .btn_put {
+      border: 0;
+      padding: 10px;
+      color: white;
+      border-radius: 4px;
+      outline: none;
+    }
+
+    .btn_success {
+      background: #58c73d;
+    }
+
+    .btn_fail {
+      background: #d63c3c;
+    }
+
+    .flex_bottom {
+      position: fixed;
+      bottom: 10px;
+      z-index: 90;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      width: 100%;
+    }
+
+    .mask {
+      position: fixed;
+      top: 0;
+      left: 0;
+      background: white;
+      width: 100%;
+      height: 100%;
+      z-index: 40;
+    }
+
+    #canvas2 {
+      width: 2480px;
+      height: 3507px;
+    }
+    #resultImg{
+      position:absolute;
+      left:0;
+      top:0;
+      z-index: 50;
+    }
+  </style>
+</head>
+<body>
+<img src="" id="resultImg" width="100%" alt="" style="display: none" />
+<div class="mask" id="mask" style="display: none"></div>
+<canvas id="canvas2" width="2480" height="3507" style="display: none">无</canvas>
+<p class="tips" id="tips">(第一步)请在空白虚线区域内手写您的姓名</p>
+<div class="top_bars" id="top">
+  <div class="tools clearCanvas" id="clear">清除文字</div>
+  <div class="tools pencilOrMove" id="isUsePencil">移动签字板</div>
+  <div class="tools finish" id="finish">提交签名</div>
+  <div class="tools reload" id="reload">重新签署</div>
+</div>
+<div class="flex_bottom" style="visibility: hidden" id="flex_bottom">
+  <button class="btn_put btn_success" id="btn_success">提交审核</button>
+  <button class="btn_put btn_fail" id="btn_fail">重新签署</button>
+</div>
+<p class="secondState" id="secondState" style="display: none">"以上&lt;&lt;xxxxxxxx&gt;&gt;的各项内容，本人已阅读并确认无异议"</p>
+<canvas id="canvas" style="top:0">您的手机不支持在线签署</canvas>
+<script>
+var NAME = 0;//签名状态
+var STATEMENT = 1;//抄写状态
+var supportsPassive = false;
+var canvasPaint = {};//画布相关状态变量
+var events = null;//是移动端还是pc端
+var state = NAME;
+try {
+  var opts = Object.defineProperty({}, 'passive', {
+    get: function () {
+      supportsPassive = true;
+    }
+  });
+  window.addEventListener("test", null, opts);
+} catch (e) {
+}
+window.onload = function () {
+  show_msg('请使用手机模式预览DEMO');
+  canvasPaint.canPaint = true;//是否可以写字
+  canvasPaint.piece = 17;//canvas的高度乘以了17倍(拖动画布功能)
+  canvasPaint.width = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
+  canvasPaint.height = window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight;
+  document.getElementById("top").style.height = canvasPaint.height + 'px';
+  canvasPaint.width = canvasPaint.width - 40;//预留工具栏宽度
+  canvasPaint.clearBtn = document.getElementById("clear");
+  canvasPaint.pencilBtn = document.getElementById("isUsePencil");
+  canvasPaint.finish = document.getElementById("finish");
+  canvasPaint.tips = document.getElementById("tips");
+  canvasPaint.reload = document.getElementById("reload");
+  canvasPaint.secondState = document.getElementById("secondState");
+  canvasPaint.back = document.getElementById("back");
+  canvasPaint.btn_success = document.getElementById("btn_success");
+  canvasPaint.btn_fail = document.getElementById("btn_fail");
+  if (state === NAME) {
+    //签名模式隐藏拖动画布按钮
+    canvasPaint.pencilBtn.style.display = 'none';
+  }
+  try {
+    canvasPaint.canvas = document.getElementById("canvas");
+    canvasPaint.ctx = document.getElementById("canvas").getContext("2d");
+    canvasPaint.canvas.width = canvasPaint.width;
+    canvasPaint.canvas.height = canvasPaint.height * canvasPaint.piece;
+    canvasPaint.canvas.style.width = canvasPaint.canvas.width + 'px';
+    canvasPaint.canvas.style.height = canvasPaint.canvas.height + 'px';
+  } catch (e) {
+    layer.open({
+      content: '您的手机版本过低,不支持在线签署,请使用打印方式签字'
+      , btn: ['确定'],
+      shadeClose: false
+      , yes: function (index) {
+        layer.close(index);
+        location.reload();
+      }
+    });
+  }
+  canvasPaint.ctx.lineCap = 'round';
+  canvasPaint.ctx.lineJoin = 'round';
+  canvasPaint.ctx.strokeWidth = 8;
+  canvasPaint.ctx.lineWidth = 8;
+  canvasPaint.isSupportTouch = ("ontouchstart" in document);
+  events = ('ontouchstart' in window) ? ['touchstart', 'touchmove', 'touchend'] : ['mousedown', 'mousemove', 'mouseup'];
+  canvasPaint.canvas.addEventListener(events[0], startEventHandler, supportsPassive ? {passive: false} : false);
+  canvasPaint.clearBtn.addEventListener(events[0], clearCanvas, false);
+  canvasPaint.pencilBtn.addEventListener(events[0], togglePencil, false);
+  canvasPaint.finish.addEventListener(events[0], finish, false);
+  canvasPaint.reload.addEventListener(events[0], reload, false);
+  canvasPaint.btn_fail.addEventListener(events[0], reload, false);
+  canvasPaint.btn_success.addEventListener(events[0], putImg, false);
+};
+
+//清除画布
+function clearCanvas() {
+  canvasPaint.ctx.clearRect(0, 0, canvasPaint.canvas.width, canvasPaint.canvas.height);
+}
+//根据base64加载图片
+function preLoadImg(source, callBack, args) {
+  var pr = [];
+  for (var i = 0; i < source.length; i++) {
+    var p = loadImage(source[i])
+      .then(function (img) {
+        return img;
+      })
+      .catch(function (err) {
+        alert("绘制失败，您的手机不支持在线签署");
+      });
+    pr.push(p);
+  }
+  Promise.all(pr)
+    .then(function (imgArray) {
+      callBack(imgArray, args);
+    });
+}
+
+function loadImage(url) {
+  return new Promise((resolve, reject) => {
+    var img = new Image();
+    img.onload = function () {
+      resolve(img);
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+//点击完成时的逻辑处理函数
+function finish() {
+  canvasPaint.layerIndex = layer.open({type: 2, shadeClose: false});//遮罩
+  if (state === NAME) {
+    //加载模板图和签的字，回调函数是result函数
+    preLoadImg(['agree.jpg', canvasPaint.canvas.toDataURL()], result);
+  }
+  if (state === STATEMENT) {
+    //加载抄的字，回调函数是stateResult函数
+    preLoadImg([canvasPaint.canvas.toDataURL()], stateResult);
+  }
+}
+
+function stateResult(imgArr) {
+  try {
+    statementDraw(imgArr);
+    canvasPaint.canvas.removeEventListener(events[0], startEventHandler, false);
+    document.removeEventListener(events[0], documentStartEventHandler, false);
+    layer.close(canvasPaint.layerIndex);
+  } catch (e) {
+    layer.close(canvasPaint.layerIndex);
+    alert('绘制失败');
+  }
+}
+
+function result(imgArr) {
+  try {
+    drawName(imgArr);
+    layer.close(canvasPaint.layerIndex);
+  } catch (e) {
+    layer.close(canvasPaint.layerIndex);
+    alert('绘制失败');
+  }
+}
+//绘制抄写的句子的方法
+function statementDraw(imgArr) {
+  canvasPaint.context2.save();
+  canvasPaint.context2.translate(490, 3085);
+  canvasPaint.context2.rotate(270 * Math.PI / 180);
+  canvasPaint.context2.drawImage(imgArr[0], 80, 50, 80, 80 * canvasPaint.ratio);//画反转后的名字
+  canvasPaint.context2.restore();
+  // console.log(canvasPaint.canvas2.toDataURL());
+  document.getElementById('resultImg').setAttribute('src', canvasPaint.canvas2.toDataURL());
+  document.getElementById('resultImg').style.display = "block";
+  document.getElementById('mask').style.display = "block";
+  document.getElementById('flex_bottom').style.visibility = "visible";
+  canvasPaint.imgResult = canvasPaint.canvas2.toDataURL();
+  console.warn(canvasPaint.imgResult);
+  show_msg('到控制台拷贝Base64到浏览器地址可查看大图');
+}
+//抄句子前的预处理
+function prevDrawStatement() {
+  clearCanvas();//清除名字
+  canvasPaint.finish.innerHTML = "提交抄写";
+  canvasPaint.pencilBtn.style.display = 'block';
+  canvasPaint.secondState.style.display = 'block';
+  canvasPaint.tips.innerHTML = "(最后一步)请抄写屏幕上方引号内的确认语句";
+  canvasPaint.tips.style.color = 'red';
+  setTimeout(function () {
+    canvasPaint.tips.style.color = '#666';
+  }, 2000);
+  state = STATEMENT;//开始写句子
+}
+//写名字的函数
+function drawName(imgArr) {
+  //绘制名字和底部的名字和日期
+  canvasPaint.canvas2 = document.getElementById('canvas2');
+  canvasPaint.context2 = canvasPaint.canvas2.getContext('2d');
+  canvasPaint.ratio = canvasPaint.canvas.height / canvasPaint.canvas.width;
+  canvasPaint.context2.drawImage(imgArr[0], 0, 0, 2480, 3507);//img0是底图原合同
+  canvasPaint.context2.save();
+  canvasPaint.context2.translate(455, 612);//1
+  canvasPaint.context2.rotate(270 * Math.PI / 180);
+  canvasPaint.context2.drawImage(imgArr[1], 80, 50, 70, 70 * canvasPaint.ratio);//画反转后的名字
+  canvasPaint.context2.restore();
+  canvasPaint.context2.save();
+  canvasPaint.context2.translate(550, 3210);//下方的字 2
+  canvasPaint.context2.rotate(270 * Math.PI / 180);
+  canvasPaint.context2.drawImage(imgArr[1], 80, 50, 70, 70 * canvasPaint.ratio);//画反转后的名字
+  canvasPaint.context2.restore();
+  canvasPaint.context2.save();
+  canvasPaint.context2.translate(1920, 3100);//下方的字
+  canvasPaint.context2.font = "32px bold 微软雅黑";
+  canvasPaint.context2.fillStyle = "#000";
+  canvasPaint.context2.textAlign = "center";
+  canvasPaint.context2.textBaseline = "middle";
+  var date = new Date();
+  var Y = date.getFullYear() + '/';
+  var M = (date.getMonth() + 1 < 10 ? '0' + (date.getMonth() + 1) : date.getMonth() + 1) + '/';
+  var D = date.getDate();
+  canvasPaint.context2.fillText((Y + M + D), 0, 0);
+  canvasPaint.context2.restore();
+  prevDrawStatement();
+}
+//是否写字的逻辑(拖动画布)
+function togglePencil() {
+  if (canvasPaint.canPaint) {
+    canvasPaint.canPaint = false;
+    canvasPaint.pencilBtn.innerText = "使用签字笔";
+    //不能签字时应该把开始事件去掉，同时加上document事件
+    canvasPaint.canvas.removeEventListener(events[0], startEventHandler, false);
+    document.addEventListener(events[0], documentStartEventHandler, supportsPassive ? {passive: false} : false);
+  } else {
+    canvasPaint.canPaint = true;
+    canvasPaint.pencilBtn.innerText = "移动签字板";
+    //能签字时应该把开始事件绑定上去，同时去掉document事件
+    canvasPaint.canvas.addEventListener(events[0], startEventHandler, supportsPassive ? {passive: false} : false);
+    document.removeEventListener(events[0], documentStartEventHandler, false);
+  }
+}
+
+function reload() {
+  location.reload();
+}
+
+function documentStartEventHandler(event) {
+  event.preventDefault();
+  var evt = canvasPaint.isSupportTouch ? event.touches[0] : event;
+  canvasPaint.y = evt.clientY;
+  canvasPaint.top = parseFloat(canvasPaint.canvas.style.top);
+  document.addEventListener(events[1], documentMoveEventHandler, supportsPassive ? {passive: false} : false);
+  document.addEventListener(events[2], documentEndEventHandler, supportsPassive ? {passive: false} : false);
+}
+
+function documentMoveEventHandler(event) {
+  event.preventDefault();
+  var evt = canvasPaint.isSupportTouch ? event.touches[0] : event;
+  canvasPaint.newY = evt.clientY - canvasPaint.y;
+  if (canvasPaint.canPaint === false) {
+    //边界的判断
+    canvasPaint.canvas.style.top = canvasPaint.newY + canvasPaint.top + 'px';
+    if (parseFloat(canvasPaint.canvas.style.top) > 0) {
+      canvasPaint.canvas.style.top = 0 + 'px';
+    }
+    if (Math.abs(parseFloat(canvasPaint.canvas.style.top)) > canvasPaint.canvas.height - canvasPaint.canvas.height / canvasPaint.piece) {
+      canvasPaint.canvas.style.top = -(canvasPaint.canvas.height - canvasPaint.canvas.height / canvasPaint.piece) + 'px';
+    }
+  }
+}
+
+function documentEndEventHandler(event) {
+  event.preventDefault();
+}
+
+function startEventHandler(event) {
+  event.preventDefault();
+  canvasPaint.ctx.beginPath();
+  canvasPaint.canvas.addEventListener(events[1], moveEventHandler, supportsPassive ? {passive: false} : false);
+  canvasPaint.canvas.addEventListener(events[2], endEventHandler, supportsPassive ? {passive: false} : false);
+}
+
+function moveEventHandler(event) {
+  event.preventDefault();
+  var evt = canvasPaint.isSupportTouch ? event.touches[0] : event;
+  var coverPos = canvasPaint.canvas.getBoundingClientRect();
+  canvasPaint.mouseX = evt.clientX - coverPos.left;
+  canvasPaint.mouseY = evt.clientY - coverPos.top;
+  if (canvasPaint.canPaint === true) {
+    //根据坐标绘制
+    canvasPaint.ctx.lineTo(
+      canvasPaint.mouseX,
+      canvasPaint.mouseY
+    );
+    canvasPaint.ctx.stroke();
+  }
+}
+
+function endEventHandler(event) {
+  event.preventDefault();
+  canvasPaint.canvas.removeEventListener(events[1], moveEventHandler, false);
+  canvasPaint.canvas.removeEventListener(events[2], endEventHandler, false);
+}
+
+//提交图片
+function putImg() {
+  canvasPaint.layerIndex = layer.open({type: 2, shadeClose: false});
+  var formData = new FormData();
+  var file = canvasPaint.imgResult;
+  formData.append('record', file);
+  console.log('模拟成功');
+  layer.open({
+    content: '上传成功,请等待审核'
+    , btn: ['确定'],
+    shadeClose: false
+    , yes: function (index) {
+      location.reload();
+      layer.close(index);
+    },
+  });
+  layer.close(canvasPaint.layerIndex);
+  /*$.ajax({
+    url: "agreement_img",
+    type: 'POST',
+    data: formData,
+    processData: false,
+    contentType: false,
+    success: function (data) {
+      layer.close(canvasPaint.layerIndex);
+      if (data.code === 200) {
+        layer.open({
+          content: '上传成功,请等待审核'
+          , btn: ['确定'],
+          shadeClose: false
+          , yes: function (index) {
+            location.reload();
+            layer.close(index);
+          },
+        });
+      } else {
+        layer.close(canvasPaint.layerIndex);
+        show_msg('上传失败，请重试');
+      }
+    },
+    error: function (error) {
+      layer.close(canvasPaint.layerIndex);
+      show_msg('上传失败，请重试');
+    }
+  });*/
+}
+
+function show_msg(content) {
+  layer.open({
+    content: content
+    , skin: 'msg'
+    , time: 5
+  });
+}
+
+</script>
+</body>
+</html>
